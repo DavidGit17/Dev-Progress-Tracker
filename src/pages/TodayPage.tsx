@@ -7,29 +7,40 @@ import { AddTaskModal } from "../components/AddTaskModal";
 import { Button } from "../components/ui/Button";
 import { SectionHeader } from "../components/ui/Card";
 import { formatDuration } from "../utils/time";
-import { requestNotificationPermission } from "../utils/notifications";
+import {
+  requestNotificationPermission,
+  getNotificationSupport,
+} from "../utils/notifications";
 
 export function TodayPage() {
   const [showAddTask, setShowAddTask] = useState(false);
+  const notificationSupport = getNotificationSupport();
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | "unsupported"
   >(() => {
     if (typeof window === "undefined") return "default";
     return "Notification" in window ? Notification.permission : "unsupported";
   });
-  const getTodayTasks = useAppStore((s) => s.getTodayTasks);
-  const getDayStats = useAppStore((s) => s.getDayStats);
+  const tasks = useAppStore((s) => s.tasks);
+  const distractions = useAppStore((s) => s.distractions);
   const notificationsEnabled = useAppStore((s) => s.notificationsEnabled);
   const setNotificationsEnabled = useAppStore((s) => s.setNotificationsEnabled);
 
   const today = format(new Date(), "yyyy-MM-dd");
-  const tasks = getTodayTasks();
-  const stats = getDayStats(today);
+  const todayTasks = tasks.filter((t) => t.date === today);
+  const todayDistractions = distractions.filter((d) => d.date === today);
 
-  const pending = tasks.filter((t) => t.status === "pending");
-  const active = tasks.filter((t) => t.status === "active");
-  const completed = tasks.filter((t) => t.status === "done");
-  const missed = tasks.filter((t) => t.status === "missed");
+  const pending = todayTasks.filter((t) => t.status === "pending");
+  const active = todayTasks.filter((t) => t.status === "active");
+  const completed = todayTasks.filter((t) => t.status === "done");
+  const missed = todayTasks.filter((t) => t.status === "missed");
+  const stats = {
+    productive: completed.reduce(
+      (sum, t) => sum + (t.actualDuration || t.plannedDuration),
+      0,
+    ),
+    wasted: todayDistractions.reduce((sum, d) => sum + d.duration, 0),
+  };
 
   useEffect(() => {
     if (!("Notification" in window)) {
@@ -40,6 +51,12 @@ export function TodayPage() {
   }, [notificationsEnabled]);
 
   const handleToggleNotifications = async () => {
+    if (!notificationSupport.supported) {
+      setNotificationPermission("unsupported");
+      setNotificationsEnabled(false);
+      return;
+    }
+
     if (!notificationsEnabled) {
       const granted = await requestNotificationPermission();
       setNotificationPermission(Notification.permission);
@@ -52,7 +69,9 @@ export function TodayPage() {
   };
 
   const completionRate =
-    tasks.length > 0 ? Math.round((completed.length / tasks.length) * 100) : 0;
+    todayTasks.length > 0
+      ? Math.round((completed.length / todayTasks.length) * 100)
+      : 0;
 
   return (
     <div className="space-y-6">
@@ -84,10 +103,16 @@ export function TodayPage() {
         </p>
       )}
 
+      {notificationPermission === "unsupported" && (
+        <p className="-mt-3 text-[10px] font-mono tracking-wide text-brand-gray">
+          {notificationSupport.reason}
+        </p>
+      )}
+
       {/* Stats strip */}
       <div className="grid grid-cols-4 gap-2">
         {[
-          { label: "Total", value: tasks.length, color: "text-white" },
+          { label: "Total", value: todayTasks.length, color: "text-white" },
           { label: "Done", value: completed.length, color: "text-white" },
           {
             label: "Active",
@@ -115,7 +140,7 @@ export function TodayPage() {
       </div>
 
       {/* Progress bar */}
-      {tasks.length > 0 && (
+      {todayTasks.length > 0 && (
         <div className="bg-brand-card border border-brand-border rounded-sm p-3">
           <div className="flex items-center justify-between mb-2">
             <span className="font-mono text-[10px] tracking-widest uppercase text-brand-gray">
@@ -152,7 +177,7 @@ export function TodayPage() {
       </Button>
 
       {/* Tasks */}
-      {tasks.length === 0 ? (
+      {todayTasks.length === 0 ? (
         <div className="text-center py-16">
           <p className="font-mono text-brand-gray text-xs tracking-widest">
             NO TASKS PLANNED

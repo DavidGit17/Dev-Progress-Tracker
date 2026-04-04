@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useAppStore } from "../store";
 import {
-  requestNotificationPermission,
+  getNotificationSupport,
   scheduleTaskReminders,
   showTaskNotification,
 } from "../utils/notifications";
@@ -13,34 +13,17 @@ export function useNotificationScheduler() {
   const setNotificationsEnabled = useAppStore((s) => s.setNotificationsEnabled);
   const updateTaskStatus = useAppStore((s) => s.updateTaskStatus);
   const scheduledTimeoutsRef = useRef<Map<string, number[]>>(new Map());
-  const hasRequestedPermissionRef = useRef(false);
 
   useEffect(() => {
-    if (hasRequestedPermissionRef.current) return;
-    hasRequestedPermissionRef.current = true;
-
-    if (!("Notification" in window)) {
+    const support = getNotificationSupport();
+    if (!support.supported) {
       setNotificationsEnabled(false);
       return;
     }
 
-    if (Notification.permission === "granted") {
-      setNotificationsEnabled(true);
-      return;
-    }
-
-    if (Notification.permission === "denied") {
+    if (Notification.permission !== "granted") {
       setNotificationsEnabled(false);
-      return;
     }
-
-    requestNotificationPermission()
-      .then((granted) => {
-        setNotificationsEnabled(granted);
-      })
-      .catch(() => {
-        setNotificationsEnabled(false);
-      });
   }, [setNotificationsEnabled]);
 
   useEffect(() => {
@@ -49,7 +32,7 @@ export function useNotificationScheduler() {
     });
     scheduledTimeoutsRef.current.clear();
 
-    if (!notificationsEnabled) return;
+    if (!notificationsEnabled || Notification.permission !== "granted") return;
 
     tasks.forEach((task) => {
       const timeoutIds = scheduleTaskReminders(

@@ -1,6 +1,11 @@
 import type { Task } from "../types";
 import { getTaskStartDate } from "./time";
 
+interface NotificationSupport {
+  supported: boolean;
+  reason: string;
+}
+
 // Pager/on-call alert style notification sounds
 let audioCtx: AudioContext | null = null;
 
@@ -68,14 +73,66 @@ export function playSessionStart() {
 }
 
 export async function requestNotificationPermission(): Promise<boolean> {
-  if (!("Notification" in window)) return false;
+  if (typeof window === "undefined") return false;
+
+  const support = getNotificationSupport();
+  if (!support.supported) return false;
+
   if (Notification.permission === "granted") return true;
+
+  if (Notification.permission === "denied") return false;
+
   const perm = await Notification.requestPermission();
   return perm === "granted";
 }
 
+export function getNotificationSupport(): NotificationSupport {
+  if (typeof window === "undefined") {
+    return {
+      supported: false,
+      reason: "Notifications are unavailable in this environment.",
+    };
+  }
+
+  if (!("Notification" in window)) {
+    return {
+      supported: false,
+      reason: "This browser does not support notifications.",
+    };
+  }
+
+  if (!window.isSecureContext) {
+    return {
+      supported: false,
+      reason: "Notifications require HTTPS (or localhost).",
+    };
+  }
+
+  const standaloneMode =
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    (window.navigator as Navigator & { standalone?: boolean }).standalone ===
+      true;
+
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  if (isIOS && !standaloneMode) {
+    return {
+      supported: false,
+      reason: "On iPhone, install to Home Screen to use notifications.",
+    };
+  }
+
+  return {
+    supported: true,
+    reason: "",
+  };
+}
+
 export function showTaskNotification(title: string, body: string) {
   playPagerAlert();
+  if ("vibrate" in navigator) {
+    navigator.vibrate?.([120, 60, 120]);
+  }
+
   if (Notification.permission === "granted") {
     new Notification(title, {
       body,
