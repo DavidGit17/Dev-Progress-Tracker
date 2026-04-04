@@ -1,0 +1,33 @@
+{
+  "name": "dev-rebirth-tracker",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.5",
+    "recharts": "^2.12.7",
+    "date-fns": "^3.6.0",
+    "lucide-react": "^0.453.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://t:eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJvcmNoaWRzIiwic3ViIjoiQHBpZXJyZS9zdG9yYWdlIiwicmVwbyI6ImQ3OGY4MzIxLThhMDEtNDU0MS1hMDBiLTFiMTg0M2FlNThlNyIsInNjb3BlcyI6WyJnaXQ6cmVhZCIsImdpdDp3cml0ZSJdLCJpYXQiOjE3NzUyNDY4NzQsImV4cCI6MTgwNjM1MDg3NH0.EJm9vqu0L0j-8doI2HRbcv1kSPw0-TPK52nkFTG9zeRef6euJiSiJPmae5iDxfa8pmfEIw-KLOh2K_TwEv_qyw@orchids.code.storage/d78f8321-8a01-4541-a00b-1b1843ae58e7.git"
+  }
+}
