@@ -13,6 +13,7 @@ interface AppState {
   // Navigation
   currentView: AppView;
   setView: (view: AppView) => void;
+  hasHydrated: boolean;
 
   // Tasks
   tasks: Task[];
@@ -61,6 +62,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       currentView: "today",
       setView: (view) => set({ currentView: view }),
+      hasHydrated: false,
 
       tasks: [],
 
@@ -210,6 +212,42 @@ export const useAppStore = create<AppState>()(
     {
       name: "dev-rebirth-tracker",
       version: 2,
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<AppState> | undefined;
+        const current = currentState as AppState;
+
+        const mergeById = <T extends { id: string }>(
+          currentItems: T[],
+          persistedItems: T[],
+        ) => {
+          const merged = new Map<string, T>();
+
+          persistedItems.forEach((item) => {
+            merged.set(item.id, item);
+          });
+
+          currentItems.forEach((item) => {
+            merged.set(item.id, item);
+          });
+
+          return Array.from(merged.values());
+        };
+
+        const persistedTasks = Array.isArray(persisted?.tasks)
+          ? persisted.tasks
+          : [];
+        const persistedDistractions = Array.isArray(persisted?.distractions)
+          ? persisted.distractions
+          : [];
+
+        return {
+          ...current,
+          ...persisted,
+          tasks: mergeById(current.tasks, persistedTasks),
+          distractions: mergeById(current.distractions, persistedDistractions),
+          hasHydrated: true,
+        };
+      },
       migrate: (persistedState: any) => {
         if (!persistedState || !Array.isArray(persistedState.tasks)) {
           return persistedState;

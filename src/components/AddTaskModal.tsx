@@ -90,6 +90,7 @@ function normalizeDateInput(value: string): string | null {
 
 export function AddTaskModal({ onClose }: AddTaskModalProps) {
   const addTask = useAppStore((s) => s.addTask);
+  const hasHydrated = useAppStore((s) => s.hasHydrated);
 
   const now = new Date();
   const defaultStart = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -139,6 +140,11 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
     startTime: string;
     endTime: string;
   }) => {
+    if (!hasHydrated) {
+      setError("Please wait a moment and try again.");
+      return;
+    }
+
     if (typeof document !== "undefined") {
       (document.activeElement as HTMLElement | null)?.blur?.();
     }
@@ -360,7 +366,7 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
         )}
 
         <div className="sticky bottom-0 z-10 bg-brand-dark pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
-          <Button type="submit" fullWidth size="lg">
+          <Button type="submit" fullWidth size="lg" disabled={!hasHydrated}>
             ADD TASK
           </Button>
         </div>

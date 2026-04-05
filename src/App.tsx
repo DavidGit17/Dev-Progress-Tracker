@@ -54,6 +54,19 @@ export default function App() {
     };
   }, [reminderBanner]);
 
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== "dev-rebirth-tracker") return;
+      void useAppStore.persist.rehydrate();
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
   return (
     <div className="min-h-screen bg-brand-dark flex flex-col max-w-md mx-auto relative">
       {/* Dot grid texture */}
