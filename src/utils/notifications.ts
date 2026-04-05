@@ -78,6 +78,32 @@ export function playSessionStart() {
   }
 }
 
+export function playNotificationToggleTone(enabled: boolean) {
+  try {
+    const ctx = getAudioCtx();
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(enabled ? 820 : 680, now);
+    osc.frequency.linearRampToValueAtTime(enabled ? 980 : 520, now + 0.08);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.22, now + 0.01);
+    gain.gain.linearRampToValueAtTime(0, now + 0.11);
+
+    osc.start(now);
+    osc.stop(now + 0.12);
+  } catch (e) {
+    console.warn("Audio toggle tone failed:", e);
+  }
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   if (typeof window === "undefined") return false;
 

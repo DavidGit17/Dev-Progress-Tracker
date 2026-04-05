@@ -55,17 +55,29 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
     setError("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitTask = () => {
+    if (typeof document !== "undefined") {
+      (document.activeElement as HTMLElement | null)?.blur?.();
+    }
+
     if (!title.trim()) {
       setError("Task title is required.");
       return;
     }
+
+    if (!date || !startTime || !endTime) {
+      setError("Date, start time, and end time are required.");
+      return;
+    }
+
     const planned = calcPlannedDuration(startTime, endTime);
-    if (planned <= 0) {
+    if (!Number.isFinite(planned) || planned <= 0) {
       setError("End time must be after start time.");
       return;
     }
+
+    setError("");
+
     addTask({
       title: title.trim(),
       category,
@@ -73,9 +85,16 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
       endTime,
       plannedDuration: planned,
       date,
-      reminders,
+      reminders: [...new Set(reminders)]
+        .filter((value) => Number.isFinite(value) && value > 0)
+        .sort((a, b) => b - a),
     });
     onClose();
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitTask();
   };
 
   return (
@@ -220,7 +239,7 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
         )}
 
         <div className="sticky bottom-0 z-10 bg-brand-dark pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
-          <Button type="submit" fullWidth size="lg">
+          <Button type="button" onClick={submitTask} fullWidth size="lg">
             ADD TASK
           </Button>
         </div>

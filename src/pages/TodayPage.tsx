@@ -10,6 +10,7 @@ import { formatDuration } from "../utils/time";
 import {
   requestNotificationPermission,
   getNotificationSupport,
+  playNotificationToggleTone,
 } from "../utils/notifications";
 
 export function TodayPage() {
@@ -51,6 +52,9 @@ export function TodayPage() {
   }, [notificationsEnabled]);
 
   const handleToggleNotifications = async () => {
+    const nextEnabled = !notificationsEnabled;
+    playNotificationToggleTone(nextEnabled);
+
     if (!notificationsEnabled) {
       await requestNotificationPermission();
       if ("Notification" in window) {
