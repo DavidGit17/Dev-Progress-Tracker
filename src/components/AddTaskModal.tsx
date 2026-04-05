@@ -18,6 +18,76 @@ const CATEGORIES: TaskCategory[] = [
 ];
 const PRESET_REMINDERS = [5, 10, 15, 30];
 
+function normalizeTimeInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const twentyFourHourMatch = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (twentyFourHourMatch) {
+    const hours = Number(twentyFourHourMatch[1]);
+    const minutes = Number(twentyFourHourMatch[2]);
+    if (hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+  }
+
+  const twelveHourMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])$/);
+  if (twelveHourMatch) {
+    const rawHours = Number(twelveHourMatch[1]);
+    const minutes = Number(twelveHourMatch[2]);
+    const period = twelveHourMatch[3].toUpperCase();
+
+    if (rawHours >= 1 && rawHours <= 12 && minutes >= 0 && minutes <= 59) {
+      let hours = rawHours % 12;
+      if (period === "PM") {
+        hours += 12;
+      }
+      return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    }
+  }
+
+  return null;
+}
+
+function normalizeDateInput(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  const slashMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!slashMatch) {
+    return null;
+  }
+
+  const first = Number(slashMatch[1]);
+  const second = Number(slashMatch[2]);
+  const year = Number(slashMatch[3]);
+
+  const candidateOrders: Array<{ day: number; month: number }> = [
+    { day: first, month: second },
+    { day: second, month: first },
+  ];
+
+  for (const candidate of candidateOrders) {
+    const { day, month } = candidate;
+    if (month < 1 || month > 12 || day < 1 || day > 31) continue;
+
+    const parsed = new Date(year, month - 1, day);
+    if (
+      parsed.getFullYear() === year &&
+      parsed.getMonth() === month - 1 &&
+      parsed.getDate() === day
+    ) {
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+  }
+
+  return null;
+}
+
 export function AddTaskModal({ onClose }: AddTaskModalProps) {
   const addTask = useAppStore((s) => s.addTask);
 
@@ -34,6 +104,14 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
   const [reminders, setReminders] = useState<number[]>([15, 5]);
   const [customReminder, setCustomReminder] = useState("");
   const [error, setError] = useState("");
+
+  const normalizedStartTime = normalizeTimeInput(startTime);
+  const normalizedEndTime = normalizeTimeInput(endTime);
+  const normalizedDate = normalizeDateInput(date);
+  const plannedPreview =
+    normalizedStartTime && normalizedEndTime
+      ? calcPlannedDuration(normalizedStartTime, normalizedEndTime)
+      : null;
 
   const toggleReminder = (value: number) => {
     setReminders((prev) => {
@@ -70,7 +148,17 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
       return;
     }
 
-    const planned = calcPlannedDuration(startTime, endTime);
+    if (!normalizedDate) {
+      setError("Enter date as YYYY-MM-DD or DD/MM/YYYY.");
+      return;
+    }
+
+    if (!normalizedStartTime || !normalizedEndTime) {
+      setError("Enter time as HH:MM or HH:MM AM/PM.");
+      return;
+    }
+
+    const planned = calcPlannedDuration(normalizedStartTime, normalizedEndTime);
     if (!Number.isFinite(planned) || planned <= 0) {
       setError("End time must be after start time.");
       return;
@@ -81,10 +169,10 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
     addTask({
       title: title.trim(),
       category,
-      startTime,
-      endTime,
+      startTime: normalizedStartTime,
+      endTime: normalizedEndTime,
       plannedDuration: planned,
-      date,
+      date: normalizedDate,
       reminders: [...new Set(reminders)]
         .filter((value) => Number.isFinite(value) && value > 0)
         .sort((a, b) => b - a),
@@ -180,7 +268,10 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
         {/* Duration preview */}
         {startTime && endTime && (
           <div className="text-brand-gray text-xs font-mono text-center">
-            Duration: {calcPlannedDuration(startTime, endTime)} minutes
+            Duration:{" "}
+            {plannedPreview && plannedPreview > 0
+              ? `${plannedPreview} minutes`
+              : "invalid time range"}
           </div>
         )}
 
