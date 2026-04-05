@@ -1,8 +1,11 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "../store";
 import {
-  scheduleTaskReminders,
-  showTaskNotification,
+  getStoredPushToken,
+  registerPushNotifications,
+  schedulePushReminders,
+  setupForegroundPushListener,
+  stopForegroundPushListener,
 } from "../utils/notifications";
 import { isTaskOverdue } from "../utils/time";
 
@@ -10,39 +13,60 @@ export function useNotificationScheduler() {
   const tasks = useAppStore((s) => s.tasks);
   const notificationsEnabled = useAppStore((s) => s.notificationsEnabled);
   const updateTaskStatus = useAppStore((s) => s.updateTaskStatus);
-  const scheduledTimeoutsRef = useRef<Map<string, number[]>>(new Map());
+  const scheduledTaskSignatureRef = useRef<string>("");
+
+  const pendingTasks = useMemo(
+    () => tasks.filter((task) => task.status === "pending"),
+    [tasks],
+  );
 
   useEffect(() => {
-    scheduledTimeoutsRef.current.forEach((timeoutIds) => {
-      timeoutIds.forEach((id) => window.clearTimeout(id));
-    });
-    scheduledTimeoutsRef.current.clear();
+    if (!notificationsEnabled) {
+      stopForegroundPushListener();
+      scheduledTaskSignatureRef.current = "";
+      return;
+    }
 
-    if (!notificationsEnabled) return;
+    const signature = JSON.stringify(
+      pendingTasks.map((task) => ({
+        id: task.id,
+        date: task.date,
+        startTime: task.startTime,
+        reminders: [...task.reminders].sort((a, b) => b - a),
+      })),
+    );
 
-    tasks.forEach((task) => {
-      const timeoutIds = scheduleTaskReminders(
-        task,
-        (taskItem, minutesBeforeStart) => {
-          showTaskNotification(
-            "Upcoming Task",
-            `Task ${taskItem.title} starts in ${minutesBeforeStart} minutes`,
-          );
-        },
-      );
+    if (scheduledTaskSignatureRef.current === signature) {
+      return;
+    }
 
-      if (timeoutIds.length > 0) {
-        scheduledTimeoutsRef.current.set(task.id, timeoutIds);
+    scheduledTaskSignatureRef.current = signature;
+
+    let disposed = false;
+
+    void (async () => {
+      await setupForegroundPushListener();
+
+      let token = getStoredPushToken();
+      if (!token) {
+        token = await registerPushNotifications();
       }
-    });
+
+      if (!token || disposed) {
+        return;
+      }
+
+      await Promise.all(
+        pendingTasks.map((task) =>
+          schedulePushReminders(task, token as string),
+        ),
+      );
+    })();
 
     return () => {
-      scheduledTimeoutsRef.current.forEach((timeoutIds) => {
-        timeoutIds.forEach((id) => window.clearTimeout(id));
-      });
-      scheduledTimeoutsRef.current.clear();
+      disposed = true;
     };
-  }, [tasks, notificationsEnabled]);
+  }, [notificationsEnabled, pendingTasks]);
 
   useEffect(() => {
     const checkOverdueTasks = () => {

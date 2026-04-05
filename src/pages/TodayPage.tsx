@@ -11,6 +11,7 @@ import {
   requestNotificationPermission,
   getNotificationSupport,
   playNotificationToggleTone,
+  registerPushNotifications,
 } from "../utils/notifications";
 
 export function TodayPage() {
@@ -57,6 +58,7 @@ export function TodayPage() {
 
     if (!notificationsEnabled) {
       await requestNotificationPermission();
+      await registerPushNotifications();
       if ("Notification" in window) {
         setNotificationPermission(Notification.permission);
       }

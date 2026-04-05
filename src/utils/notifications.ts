@@ -1,5 +1,8 @@
+import { getToken, onMessage } from "firebase/messaging";
+import type { MessagePayload, Unsubscribe } from "firebase/messaging";
 import type { Task } from "../types";
 import { getTaskStartDate } from "./time";
+import { getFirebaseMessaging, isFirebaseConfigured } from "../lib/firebase";
 
 interface NotificationSupport {
   supported: boolean;
@@ -11,6 +14,13 @@ export interface TaskReminderEventDetail {
   body: string;
   timestamp: number;
 }
+
+const PUSH_TOKEN_STORAGE_KEY = "dev-rebirth-tracker:fcm-token";
+const REMINDER_API_BASE_URL =
+  import.meta.env.VITE_REMINDER_API_BASE_URL?.replace(/\/$/, "") ?? "";
+const FCM_VAPID_PUBLIC_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+
+let foregroundListenerUnsubscribe: Unsubscribe | null = null;
 
 // Pager/on-call alert style notification sounds
 let audioCtx: AudioContext | null = null;
@@ -104,6 +114,40 @@ export function playNotificationToggleTone(enabled: boolean) {
   }
 }
 
+function emitReminderEvent(title: string, body: string) {
+  if (typeof window === "undefined") return;
+
+  window.dispatchEvent(
+    new CustomEvent<TaskReminderEventDetail>("task-reminder", {
+      detail: {
+        title,
+        body,
+        timestamp: Date.now(),
+      },
+    }),
+  );
+}
+
+export function getStoredPushToken() {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(PUSH_TOKEN_STORAGE_KEY);
+}
+
+function savePushToken(token: string) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PUSH_TOKEN_STORAGE_KEY, token);
+}
+
+export async function registerFirebaseMessagingServiceWorker() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+    return null;
+  }
+
+  return navigator.serviceWorker.register("/firebase-messaging-sw.js", {
+    scope: "/",
+  });
+}
+
 export async function requestNotificationPermission(): Promise<boolean> {
   if (typeof window === "undefined") return false;
 
@@ -118,11 +162,116 @@ export async function requestNotificationPermission(): Promise<boolean> {
   return perm === "granted";
 }
 
+export async function syncPushTokenWithBackend(token: string) {
+  if (!REMINDER_API_BASE_URL) return;
+
+  try {
+    await fetch(`${REMINDER_API_BASE_URL}/api/push/token`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ token }),
+    });
+  } catch (error) {
+    console.warn("Failed to sync push token:", error);
+  }
+}
+
+export async function registerPushNotifications(): Promise<string | null> {
+  if (!isFirebaseConfigured()) {
+    return null;
+  }
+
+  const granted = await requestNotificationPermission();
+  if (!granted) {
+    return null;
+  }
+
+  const messaging = await getFirebaseMessaging();
+  if (!messaging) {
+    return null;
+  }
+
+  const serviceWorkerRegistration =
+    await registerFirebaseMessagingServiceWorker();
+  if (!serviceWorkerRegistration) {
+    return null;
+  }
+
+  if (!FCM_VAPID_PUBLIC_KEY) {
+    console.warn("Missing VITE_FIREBASE_VAPID_KEY, cannot request FCM token.");
+    return null;
+  }
+
+  try {
+    const token = await getToken(messaging, {
+      vapidKey: FCM_VAPID_PUBLIC_KEY,
+      serviceWorkerRegistration,
+    });
+
+    if (!token) {
+      return null;
+    }
+
+    savePushToken(token);
+    await syncPushTokenWithBackend(token);
+
+    return token;
+  } catch (error) {
+    console.warn("Failed to obtain FCM token:", error);
+    return null;
+  }
+}
+
+function normalizeMessagePayload(payload: MessagePayload) {
+  const title =
+    payload.notification?.title || payload.data?.title || "Task Reminder";
+  const body =
+    payload.notification?.body ||
+    payload.data?.body ||
+    "You have an upcoming task.";
+
+  return { title, body };
+}
+
+export async function setupForegroundPushListener() {
+  if (foregroundListenerUnsubscribe) {
+    return;
+  }
+
+  const messaging = await getFirebaseMessaging();
+  if (!messaging) {
+    return;
+  }
+
+  foregroundListenerUnsubscribe = onMessage(messaging, (payload) => {
+    const { title, body } = normalizeMessagePayload(payload);
+    showTaskNotification(title, body);
+  });
+}
+
+export function stopForegroundPushListener() {
+  if (!foregroundListenerUnsubscribe) {
+    return;
+  }
+
+  foregroundListenerUnsubscribe();
+  foregroundListenerUnsubscribe = null;
+}
+
 export function getNotificationSupport(): NotificationSupport {
   if (typeof window === "undefined") {
     return {
       supported: false,
       reason: "Notifications are unavailable in this environment.",
+    };
+  }
+
+  if (!isFirebaseConfigured()) {
+    return {
+      supported: false,
+      reason: "Firebase messaging is not configured.",
     };
   }
 
@@ -165,17 +314,7 @@ export function showTaskNotification(title: string, body: string) {
     navigator.vibrate?.([120, 60, 120]);
   }
 
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(
-      new CustomEvent<TaskReminderEventDetail>("task-reminder", {
-        detail: {
-          title,
-          body,
-          timestamp: Date.now(),
-        },
-      }),
-    );
-  }
+  emitReminderEvent(title, body);
 
   if (Notification.permission === "granted") {
     new Notification(title, {
@@ -186,32 +325,45 @@ export function showTaskNotification(title: string, body: string) {
   }
 }
 
-export function scheduleTaskReminders(
-  task: Task,
-  onReminder: (taskItem: Task, minutesBeforeStart: number) => void,
-): number[] {
-  if (task.status !== "pending") return [];
+export async function schedulePushReminders(task: Task, token: string) {
+  if (!REMINDER_API_BASE_URL || task.status !== "pending") {
+    return;
+  }
 
   const startDate = getTaskStartDate(task);
-  const now = Date.now();
-  const uniqueSortedReminders = [...new Set(task.reminders)]
+  const reminders = [...new Set(task.reminders)]
     .filter((minutes) => Number.isFinite(minutes) && minutes > 0)
-    .sort((a, b) => b - a);
+    .sort((a, b) => b - a)
+    .map((minutesBeforeStart) => {
+      const triggerAt =
+        startDate.getTime() - Number(minutesBeforeStart) * 60 * 1000;
+      return {
+        minutesBeforeStart: Number(minutesBeforeStart),
+        triggerAt: new Date(triggerAt).toISOString(),
+      };
+    })
+    .filter((reminder) => new Date(reminder.triggerAt).getTime() > Date.now());
 
-  const timeoutIds: number[] = [];
+  if (reminders.length === 0) {
+    return;
+  }
 
-  uniqueSortedReminders.forEach((minutesBeforeStart) => {
-    const triggerAt = startDate.getTime() - minutesBeforeStart * 60 * 1000;
-    const delay = triggerAt - now;
-
-    if (delay <= 0) return;
-
-    const timeoutId = window.setTimeout(() => {
-      onReminder(task, minutesBeforeStart);
-    }, delay);
-
-    timeoutIds.push(timeoutId);
-  });
-
-  return timeoutIds;
+  try {
+    await fetch(`${REMINDER_API_BASE_URL}/api/reminders/schedule`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        token,
+        taskId: task.id,
+        title: task.title,
+        date: task.date,
+        startTime: task.startTime,
+        reminders,
+      }),
+    });
+  } catch (error) {
+    console.warn("Failed to schedule push reminder:", error);
+  }
 }
