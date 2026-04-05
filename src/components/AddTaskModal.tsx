@@ -133,32 +133,49 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
     setError("");
   };
 
-  const submitTask = () => {
+  const submitTask = (formValues?: {
+    title: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  }) => {
     if (typeof document !== "undefined") {
       (document.activeElement as HTMLElement | null)?.blur?.();
     }
 
-    if (!title.trim()) {
+    const submittedTitle = formValues?.title ?? title;
+    const submittedDate = formValues?.date ?? date;
+    const submittedStartTime = formValues?.startTime ?? startTime;
+    const submittedEndTime = formValues?.endTime ?? endTime;
+
+    const normalizedSubmittedDate = normalizeDateInput(submittedDate);
+    const normalizedSubmittedStartTime = normalizeTimeInput(submittedStartTime);
+    const normalizedSubmittedEndTime = normalizeTimeInput(submittedEndTime);
+
+    if (!submittedTitle.trim()) {
       setError("Task title is required.");
       return;
     }
 
-    if (!date || !startTime || !endTime) {
+    if (!submittedDate || !submittedStartTime || !submittedEndTime) {
       setError("Date, start time, and end time are required.");
       return;
     }
 
-    if (!normalizedDate) {
+    if (!normalizedSubmittedDate) {
       setError("Enter date as YYYY-MM-DD or DD/MM/YYYY.");
       return;
     }
 
-    if (!normalizedStartTime || !normalizedEndTime) {
+    if (!normalizedSubmittedStartTime || !normalizedSubmittedEndTime) {
       setError("Enter time as HH:MM or HH:MM AM/PM.");
       return;
     }
 
-    const planned = calcPlannedDuration(normalizedStartTime, normalizedEndTime);
+    const planned = calcPlannedDuration(
+      normalizedSubmittedStartTime,
+      normalizedSubmittedEndTime,
+    );
     if (!Number.isFinite(planned) || planned <= 0) {
       setError("End time must be after start time.");
       return;
@@ -167,12 +184,12 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
     setError("");
 
     addTask({
-      title: title.trim(),
+      title: submittedTitle.trim(),
       category,
-      startTime: normalizedStartTime,
-      endTime: normalizedEndTime,
+      startTime: normalizedSubmittedStartTime,
+      endTime: normalizedSubmittedEndTime,
       plannedDuration: planned,
-      date: normalizedDate,
+      date: normalizedSubmittedDate,
       reminders: [...new Set(reminders)]
         .filter((value) => Number.isFinite(value) && value > 0)
         .sort((a, b) => b - a),
@@ -182,7 +199,16 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    submitTask();
+
+    const form = e.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
+
+    submitTask({
+      title: String(formData.get("title") ?? ""),
+      date: String(formData.get("date") ?? ""),
+      startTime: String(formData.get("startTime") ?? ""),
+      endTime: String(formData.get("endTime") ?? ""),
+    });
   };
 
   return (
@@ -194,6 +220,7 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
             Task Title
           </label>
           <input
+            name="title"
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -232,6 +259,7 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
             Date
           </label>
           <input
+            name="date"
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
@@ -246,6 +274,7 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
               Start Time
             </label>
             <input
+              name="startTime"
               type="time"
               value={startTime}
               onChange={(e) => setStartTime(e.target.value)}
@@ -257,6 +286,7 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
               End Time
             </label>
             <input
+              name="endTime"
               type="time"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
@@ -330,7 +360,7 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
         )}
 
         <div className="sticky bottom-0 z-10 bg-brand-dark pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
-          <Button type="button" onClick={submitTask} fullWidth size="lg">
+          <Button type="submit" fullWidth size="lg">
             ADD TASK
           </Button>
         </div>
