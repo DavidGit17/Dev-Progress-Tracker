@@ -219,9 +219,11 @@ export function AddTaskModal({ onClose }: AddTaskModalProps) {
           </p>
         )}
 
-        <Button type="submit" fullWidth size="lg">
-          ADD TASK
-        </Button>
+        <div className="sticky bottom-0 z-10 bg-brand-dark pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+          <Button type="submit" fullWidth size="lg">
+            ADD TASK
+          </Button>
+        </div>
       </form>
     </Modal>
   );

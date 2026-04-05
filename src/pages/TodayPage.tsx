@@ -51,18 +51,12 @@ export function TodayPage() {
   }, [notificationsEnabled]);
 
   const handleToggleNotifications = async () => {
-    if (!notificationSupport.supported) {
-      setNotificationPermission("unsupported");
-      setNotificationsEnabled(false);
-      return;
-    }
-
     if (!notificationsEnabled) {
-      const granted = await requestNotificationPermission();
-      setNotificationPermission(Notification.permission);
-      if (granted) {
-        setNotificationsEnabled(true);
+      await requestNotificationPermission();
+      if ("Notification" in window) {
+        setNotificationPermission(Notification.permission);
       }
+      setNotificationsEnabled(true);
     } else {
       setNotificationsEnabled(false);
     }

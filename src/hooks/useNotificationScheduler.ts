@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAppStore } from "../store";
 import {
-  getNotificationSupport,
   scheduleTaskReminders,
   showTaskNotification,
 } from "../utils/notifications";
@@ -10,21 +9,8 @@ import { isTaskOverdue } from "../utils/time";
 export function useNotificationScheduler() {
   const tasks = useAppStore((s) => s.tasks);
   const notificationsEnabled = useAppStore((s) => s.notificationsEnabled);
-  const setNotificationsEnabled = useAppStore((s) => s.setNotificationsEnabled);
   const updateTaskStatus = useAppStore((s) => s.updateTaskStatus);
   const scheduledTimeoutsRef = useRef<Map<string, number[]>>(new Map());
-
-  useEffect(() => {
-    const support = getNotificationSupport();
-    if (!support.supported) {
-      setNotificationsEnabled(false);
-      return;
-    }
-
-    if (Notification.permission !== "granted") {
-      setNotificationsEnabled(false);
-    }
-  }, [setNotificationsEnabled]);
 
   useEffect(() => {
     scheduledTimeoutsRef.current.forEach((timeoutIds) => {
@@ -32,7 +18,7 @@ export function useNotificationScheduler() {
     });
     scheduledTimeoutsRef.current.clear();
 
-    if (!notificationsEnabled || Notification.permission !== "granted") return;
+    if (!notificationsEnabled) return;
 
     tasks.forEach((task) => {
       const timeoutIds = scheduleTaskReminders(
