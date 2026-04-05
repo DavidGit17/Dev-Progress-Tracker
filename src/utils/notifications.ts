@@ -6,6 +6,12 @@ interface NotificationSupport {
   reason: string;
 }
 
+export interface TaskReminderEventDetail {
+  title: string;
+  body: string;
+  timestamp: number;
+}
+
 // Pager/on-call alert style notification sounds
 let audioCtx: AudioContext | null = null;
 
@@ -131,6 +137,18 @@ export function showTaskNotification(title: string, body: string) {
   playPagerAlert();
   if ("vibrate" in navigator) {
     navigator.vibrate?.([120, 60, 120]);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent<TaskReminderEventDetail>("task-reminder", {
+        detail: {
+          title,
+          body,
+          timestamp: Date.now(),
+        },
+      }),
+    );
   }
 
   if (Notification.permission === "granted") {
