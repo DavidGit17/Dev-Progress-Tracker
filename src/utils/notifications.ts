@@ -15,12 +15,20 @@ export interface TaskReminderEventDetail {
   timestamp: number;
 }
 
+export interface ScheduledTaskReminder {
+  key: string;
+  triggerAt: number;
+  title: string;
+  body: string;
+}
+
 const PUSH_TOKEN_STORAGE_KEY = "dev-rebirth-tracker:fcm-token";
 const REMINDER_API_BASE_URL =
   import.meta.env.VITE_REMINDER_API_BASE_URL?.replace(/\/$/, "") ?? "";
 const FCM_VAPID_PUBLIC_KEY = import.meta.env.VITE_FIREBASE_VAPID_KEY;
 
 let foregroundListenerUnsubscribe: Unsubscribe | null = null;
+let activeReminderLoopId: number | null = null;
 
 // Pager/on-call alert style notification sounds
 let audioCtx: AudioContext | null = null;
@@ -63,6 +71,39 @@ export function playPagerAlert() {
   } catch (e) {
     console.warn("Audio alert failed:", e);
   }
+}
+
+function vibrateReminder() {
+  if ("vibrate" in navigator) {
+    navigator.vibrate?.([120, 60, 120]);
+  }
+}
+
+function startPersistentReminderAlert() {
+  if (typeof window === "undefined") return;
+
+  if (activeReminderLoopId !== null) {
+    window.clearInterval(activeReminderLoopId);
+  }
+
+  playPagerAlert();
+  vibrateReminder();
+
+  activeReminderLoopId = window.setInterval(() => {
+    playPagerAlert();
+    vibrateReminder();
+  }, 1800);
+}
+
+export function stopActiveReminderAlert() {
+  if (typeof window === "undefined") return;
+
+  if (activeReminderLoopId !== null) {
+    window.clearInterval(activeReminderLoopId);
+    activeReminderLoopId = null;
+  }
+
+  navigator.vibrate?.(0);
 }
 
 export function playSessionStart() {
@@ -268,13 +309,6 @@ export function getNotificationSupport(): NotificationSupport {
     };
   }
 
-  if (!isFirebaseConfigured()) {
-    return {
-      supported: false,
-      reason: "Firebase messaging is not configured.",
-    };
-  }
-
   if (!("Notification" in window)) {
     return {
       supported: false,
@@ -309,10 +343,7 @@ export function getNotificationSupport(): NotificationSupport {
 }
 
 export function showTaskNotification(title: string, body: string) {
-  playPagerAlert();
-  if ("vibrate" in navigator) {
-    navigator.vibrate?.([120, 60, 120]);
-  }
+  startPersistentReminderAlert();
 
   emitReminderEvent(title, body);
 
@@ -325,24 +356,63 @@ export function showTaskNotification(title: string, body: string) {
   }
 }
 
+function formatReminderOffset(minutesBeforeStart: number) {
+  if (minutesBeforeStart === 60) {
+    return "in 1 hour";
+  }
+
+  if (minutesBeforeStart > 60 && minutesBeforeStart % 60 === 0) {
+    const hours = minutesBeforeStart / 60;
+    return `in ${hours} hours`;
+  }
+
+  if (minutesBeforeStart === 1) {
+    return "in 1 minute";
+  }
+
+  return `in ${minutesBeforeStart} minutes`;
+}
+
+export function getScheduledTaskReminders(
+  task: Task,
+): ScheduledTaskReminder[] {
+  if (task.status !== "pending") {
+    return [];
+  }
+
+  const startDate = getTaskStartDate(task);
+
+  return [...new Set(task.reminders)]
+    .filter((minutes) => Number.isFinite(minutes) && minutes > 0)
+    .sort((a, b) => b - a)
+    .map((minutesBeforeStart) => {
+      const safeMinutes = Number(minutesBeforeStart);
+      const triggerAt = startDate.getTime() - safeMinutes * 60 * 1000;
+
+      return {
+        key: `${task.id}:${safeMinutes}:${triggerAt}`,
+        triggerAt,
+        title: task.title,
+        body: `${task.title} starts ${formatReminderOffset(safeMinutes)} at ${task.startTime}.`,
+      };
+    });
+}
+
 export async function schedulePushReminders(task: Task, token: string) {
   if (!REMINDER_API_BASE_URL || task.status !== "pending") {
     return;
   }
 
-  const startDate = getTaskStartDate(task);
-  const reminders = [...new Set(task.reminders)]
-    .filter((minutes) => Number.isFinite(minutes) && minutes > 0)
-    .sort((a, b) => b - a)
-    .map((minutesBeforeStart) => {
-      const triggerAt =
-        startDate.getTime() - Number(minutesBeforeStart) * 60 * 1000;
+  const reminders = getScheduledTaskReminders(task)
+    .filter((reminder) => reminder.triggerAt > Date.now())
+    .map((reminder) => {
+      const [, minutesBeforeStart] = reminder.key.split(":");
+
       return {
         minutesBeforeStart: Number(minutesBeforeStart),
-        triggerAt: new Date(triggerAt).toISOString(),
+        triggerAt: new Date(reminder.triggerAt).toISOString(),
       };
-    })
-    .filter((reminder) => new Date(reminder.triggerAt).getTime() > Date.now());
+    });
 
   if (reminders.length === 0) {
     return;

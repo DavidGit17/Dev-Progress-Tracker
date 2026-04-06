@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "../store";
 import {
+  getScheduledTaskReminders,
   getStoredPushToken,
   registerPushNotifications,
   schedulePushReminders,
+  showTaskNotification,
   setupForegroundPushListener,
   stopForegroundPushListener,
 } from "../utils/notifications";
@@ -14,6 +16,8 @@ export function useNotificationScheduler() {
   const notificationsEnabled = useAppStore((s) => s.notificationsEnabled);
   const updateTaskStatus = useAppStore((s) => s.updateTaskStatus);
   const scheduledTaskSignatureRef = useRef<string>("");
+  const reminderTimeoutsRef = useRef<Map<string, number>>(new Map());
+  const firedReminderKeysRef = useRef<Set<string>>(new Set());
 
   const pendingTasks = useMemo(
     () => tasks.filter((task) => task.status === "pending"),
@@ -21,6 +25,11 @@ export function useNotificationScheduler() {
   );
 
   useEffect(() => {
+    reminderTimeoutsRef.current.forEach((timeoutId) => {
+      window.clearTimeout(timeoutId);
+    });
+    reminderTimeoutsRef.current.clear();
+
     if (!notificationsEnabled) {
       stopForegroundPushListener();
       scheduledTaskSignatureRef.current = "";
@@ -44,6 +53,31 @@ export function useNotificationScheduler() {
 
     let disposed = false;
 
+    pendingTasks.forEach((task) => {
+      getScheduledTaskReminders(task).forEach((reminder) => {
+        if (firedReminderKeysRef.current.has(reminder.key)) {
+          return;
+        }
+
+        const delay = reminder.triggerAt - Date.now();
+        if (delay <= 0) {
+          if (delay > -60 * 1000) {
+            firedReminderKeysRef.current.add(reminder.key);
+            showTaskNotification(reminder.title, reminder.body);
+          }
+          return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+          firedReminderKeysRef.current.add(reminder.key);
+          reminderTimeoutsRef.current.delete(reminder.key);
+          showTaskNotification(reminder.title, reminder.body);
+        }, delay);
+
+        reminderTimeoutsRef.current.set(reminder.key, timeoutId);
+      });
+    });
+
     void (async () => {
       await setupForegroundPushListener();
 
@@ -65,6 +99,10 @@ export function useNotificationScheduler() {
 
     return () => {
       disposed = true;
+      reminderTimeoutsRef.current.forEach((timeoutId) => {
+        window.clearTimeout(timeoutId);
+      });
+      reminderTimeoutsRef.current.clear();
     };
   }, [notificationsEnabled, pendingTasks]);
 

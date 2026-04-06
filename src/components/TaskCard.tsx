@@ -180,6 +180,17 @@ export function TaskCard({ task }: TaskCardProps) {
               <CheckCircle size={14} />
             </Button>
           )}
+          {(isDone || isMissed) && (
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={() => deleteTask(task.id)}
+              className="flex-1"
+            >
+              <Trash2 size={14} />
+              Delete Task
+            </Button>
+          )}
         </div>
 
         {/* Extended actions */}

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { format, subDays } from 'date-fns';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { SectionHeader } from '../components/ui/Card';
 import { CategoryBadge, StatusDot } from '../components/ui/Badge';
@@ -12,6 +12,7 @@ export function HistoryPage() {
   const getTasksByDate = useAppStore((s) => s.getTasksByDate);
   const getDistractionsByDate = useAppStore((s) => s.getDistractionsByDate);
   const getDayStats = useAppStore((s) => s.getDayStats);
+  const deleteTask = useAppStore((s) => s.deleteTask);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
 
   const dates = Array.from({ length: DAYS_TO_SHOW }, (_, i) =>
@@ -123,6 +124,17 @@ export function HistoryPage() {
                                 <span className="font-mono text-xs text-brand-gray">
                                   {formatDuration(t.actualDuration || t.plannedDuration)}
                                 </span>
+                                {(t.status === 'done' || t.status === 'missed') && (
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteTask(t.id)}
+                                    className="flex items-center gap-1 rounded-sm border border-brand-border px-2 py-1 text-[10px] font-mono uppercase tracking-wide text-brand-gray transition-colors hover:border-white hover:text-white"
+                                    aria-label={`Delete task ${t.title}`}
+                                  >
+                                    <Trash2 size={12} />
+                                    Delete
+                                  </button>
+                                )}
                               </div>
                             </div>
                           ))}
